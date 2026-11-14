@@ -40,7 +40,8 @@ jobs:
 
       - name: Scan Git history for secrets
         shell: bash
-        run: "$RUNNER_TEMP/gitleaks" git --no-banner --redact=100 .
+        run: |
+          "$RUNNER_TEMP/gitleaks" git --no-banner --redact=100 .
 
       - name: Use pinned Node.js runtime
         uses: actions/setup-node@v7.1.0
