@@ -35,4 +35,4 @@ The required architecture gate is documented in [REPOSITORY_AUDIT.md](REPOSITORY
 
 The audit selects the existing direct TypeScript MV3 implementation, `proxy-chain@3.0.3`, `ipaddr.js@2.3.0`, founder-only Node/SQLite auth, and Playwright `1.65.0` for the current milestone. WXT, 3proxy, Better Auth, Keycloak, shadcn, Blocky, dnsproxy, Caddy, Prometheus, Trivy, Outline and WireGuard are deferred to explicit requirement gates rather than added speculatively.
 
-Current implementation HEAD `15c8fb9` passed GitHub Actions run `43648138870`. The next small reusable security milestone is pinned Gitleaks `v8.30.1`, followed by owner-Chrome/live-route acceptance. No framework rewrite or paid deployment is justified by this audit.
+Current audited implementation HEAD `15c8fb9` passed GitHub Actions run `43648138870`. A pinned Gitleaks `v8.30.1` CLI history scan is now implemented on the security-tooling branch; it must not be called validated until the latest PR #1 workflow run passes after integration. Owner-Chrome/live-route acceptance remains next. No framework rewrite or paid deployment is justified by this audit.
