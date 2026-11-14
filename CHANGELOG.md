@@ -6,6 +6,7 @@ This changelog records verified repository changes and architecture decisions. I
 
 ### Added
 
+- Pinned Gitleaks `v8.30.1` CLI integration for full Git-history secret scanning in CI; the Linux x64 archive is verified against upstream SHA-256 before execution. No Gitleaks Action or npm/runtime dependency is added.
 - `docs/REPOSITORY_AUDIT.md` — current repository/branch/upstream audit.
 - `docs/COMPETITOR_FEATURE_MATRIX.md` — current NordVPN, Proton VPN and ExpressVPN planning benchmark.
 - `docs/LICENSE_AND_DEPENDENCY_AUDIT.md` — exact dependency/license/commercial-use inventory.
@@ -33,6 +34,6 @@ This changelog records verified repository changes and architecture decisions. I
 - Audited implementation HEAD `15c8fb9` passed GitHub Actions run `43648138870`; the workflow's install, TypeScript, test, build, package, archive/checksum, npm-audit and whitespace steps all succeeded.
 - Run `43647697066` at `91e90c1` recorded 57/57 tests passing with zero skipped, including actual MV3 worker loading.
 - No runtime source was changed by this architecture pass.
-- Historical tests remain historical evidence; the newest feature-branch commits require fresh validation.
+- The Gitleaks workflow change requires a fresh PR #1 run before secret-scan coverage is considered verified.
 - No paid cloud resource, live US endpoint, domain, external account or public release was created.
 - GitHub reports the repository as public; changing visibility requires an owner/account decision.
