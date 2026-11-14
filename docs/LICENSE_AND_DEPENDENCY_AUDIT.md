@@ -14,7 +14,7 @@ The browser-proxy MVP deliberately keeps a small dependency surface.
 | @types/chrome | `0.3.7` | DefinitelyTyped package | MIT | Development-only; retain notice if redistributed | Type checking only |
 | @types/node | `24.19.2` | DefinitelyTyped package | MIT | Development-only | Type checking only |
 | TypeScript | `7.0.2` | https://github.com/microsoft/TypeScript | Apache-2.0 | Development/build tooling; retain license/NOTICE as applicable | Strict `tsc --noEmit` |
-| Node.js runtime | `24.22.1` project pin | https://github.com/nodejs/node | mixed upstream project notices | Review runtime redistribution obligations if bundling Node; currently operator-provided runtime | Built-in HTTPS, crypto and SQLite are used; no custom crypto protocol |
+| Node.js runtime | `24.22.1` project pin | https://github.com/nodejs/node | mixed upstream project notices | Review runtime redistribution obligations if bundling Node; currently operator-provided runtime | Built-in HTTPS, crypto and SQLite are used; no custom crypto protocol |\n| Gitleaks CLI | `v8.30.1` | https://github.com/gitleaks/gitleaks | MIT | CI-only tool; no runtime/product redistribution required for current use. The release archive is pinned to SHA-256 `551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb`. | Full-history CI scan; latest run must pass before claiming coverage |
 
 The lockfile records exact npm tarball URLs and integrity hashes. `private: true` prevents accidental npm publication but does not define product licensing.
 
@@ -36,7 +36,7 @@ The lockfile records exact npm tarball URLs and integrity hashes. `private: true
 | shadcn-ui/ui | `shadcn@4.23.0` | MIT | Deferred | Copy-in component model still creates ongoing dependency/style maintenance; current UI is too small to justify it |
 | caddyserver/caddy | `v2.11.9` | Apache-2.0 | Deployment candidate | Current release includes security fixes; pin only when a real host/domain/TLS deployment is approved |
 | prometheus/prometheus | `v3.16.0` | Apache-2.0 | Deferred | Too much operational surface for one founder gateway |
-| gitleaks/gitleaks | `v8.30.1` | MIT | Selected next security-tooling milestone | Project states feature development is complete and future releases focus on security patches; pin exact version/action and verify scan |
+| gitleaks/gitleaks | `v8.30.1` | MIT | Selected / integrated CI CLI | Uses upstream CLI binary directly with published SHA-256 verification; avoids the separate Gitleaks Action licensing requirement for organizations; verify latest scan before merge/release |
 | aquasecurity/trivy | `v0.76.2` | Apache-2.0 | Deferred | Useful when images/filesystems/native packages exist; database download and CI time are unnecessary for current narrow npm service |
 | Mullvad app | audited commit in REPO_AUDIT | GPL-3.0 | Reference only | Do not copy code into a proprietary/undecided-license product without an explicit copyleft compliance decision |
 | Proton VPN browser extension | audited commit in REPO_AUDIT | GPL-3.0 | Reference only | Same copyleft boundary; UX concepts may be studied, source not copied |
