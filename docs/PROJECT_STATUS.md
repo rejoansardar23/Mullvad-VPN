@@ -27,3 +27,12 @@ The development branch now has an automatically triggered GitHub Actions workflo
 The review uncovered and corrected a hard-coded workspace-specific npm cache that prevented clean CI installation, and improved fail-closed blocking of special-use IPv4/IPv6 destination ranges (including mapped IPv4) with regression cases. The GitHub Actions verification workflow uses `contents: read` and has no deployment, publishing, billing or secrets steps. No extra production library, paid hosting or deployment was introduced. Updated maintained GitHub action versions are separately subject to current workflow status.
 
 **Security/release blockers** remain: founder-approved/authorized no-cost US hosting and actual exit proof; production proxy TLS and firewall; owner-browser end-to-end proxy-auth/renewal/revocation, leaks, restarts and outage checks; independent network abuse, quota/provider overhead, data-retention and secrets review; real recovery/rollback and project distribution license. This is a **review candidate**, not a commercial VPN or complete full-device tunnel.
+
+
+## Open-source reuse / credit-optimization audit — 2026-11-15
+
+The required architecture gate is documented in [REPOSITORY_AUDIT.md](REPOSITORY_AUDIT.md), [BUILD_VS_REUSE.md](BUILD_VS_REUSE.md), [COMPETITOR_FEATURE_MATRIX.md](COMPETITOR_FEATURE_MATRIX.md), [ARCHITECTURE.md](ARCHITECTURE.md), [LICENSE_AND_DEPENDENCY_AUDIT.md](LICENSE_AND_DEPENDENCY_AUDIT.md), [SECURITY_THREAT_MODEL.md](SECURITY_THREAT_MODEL.md), and [IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md).
+
+The audit selects the existing direct TypeScript MV3 implementation, `proxy-chain@3.0.3`, `ipaddr.js@2.3.0`, founder-only Node/SQLite auth, and Playwright `1.65.0` for the current milestone. WXT, 3proxy, Better Auth, Keycloak, shadcn, Blocky, dnsproxy, Caddy, Prometheus, Trivy, Outline and WireGuard are deferred to explicit requirement gates rather than added speculatively.
+
+Current implementation HEAD `15c8fb9` passed GitHub Actions run `43648138870`. The next small reusable security milestone is pinned Gitleaks `v8.30.1`, followed by owner-Chrome/live-route acceptance. No framework rewrite or paid deployment is justified by this audit.
