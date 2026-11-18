@@ -60,3 +60,57 @@ Keep each bounded task in a committed and pushed state before the next. Do not
 force-push, reset shared work, bypass verification or publish private state.
 When tests are authorized, validate the final reorganized commit using the
 documented commands before calling the environment or application ready.
+
+AUDIT ADDENDUM
+Prepared: 18 November 2026
+Reviewed starting commit: 5a33f2d9bb4b5408c35ed628e21a1ef0eff9be84
+Comparison baseline: 4655d408bab907b48e176d7641c6bed55204d7dc
+
+Git and authorization evidence
+The clean starting checkout had 167 tracked paths, all regular 100644 entries,
+and no untracked paths. Build, dist and node_modules were ignored. Git object
+integrity passed. The recorded baseline is an ancestor. The four commits
+from that baseline through the starting revision account for the functional
+restructure, startup fix, handoff and merge. The commits have no verified
+signatures in this checkout. Both Planeshiffhter/Mullvad-VPN (configured origin)
+and the named rejoansardar23/Mullvad-VPN returned the same main SHA during
+read-only checks. Shared history and a matching SHA establish common content,
+with account authority subject to separate evidence. The push dry run to the
+named repository returned HTTP 403 for the injected Planeshiffhter identity.
+The recovery branch was retained locally.
+
+No local executable hooks, custom hooks path, tracked executable modes,
+tracked symlinks, changed npm lockfile, or automated deployment path were
+observed in the reviewed scope. The existing CI workflow remains manual and
+read-only, does not persist its checkout credential and verifies the secret
+scanner download checksum. This change pins the two existing GitHub Action
+releases to their resolved commits to limit mutable references.
+
+Checksum-verified Gitleaks 8.30.1 reported no remaining matches across the
+reachable history when first-parent merge diffs were included. The exact
+historical architecture-prose finding was reproduced separately and remains
+a reviewed false positive. Pattern scans do not establish the absence of
+backdoors or scan arbitrary binary archive contents. No suspicious file was
+attributed to an attacker. The reported unauthorized access remains an
+open owner-side investigation.
+
+Preservation and structure
+All 99 entries in the existing preservation ledger matched the baseline Git
+blobs, and their mapped paths matched at the starting revision. All 87
+AnalyseFuture paths were inventoried against the existing catalog and handoff
+appendix. The earlier code copies are superseded active predecessors. Research,
+license notes and earlier implementation and validation evidence remain useful
+references; retired CI, old instructions and branch directions stay inert.
+No active code restoration, file move, discard or archival was needed.
+The upstream ZIPs retain preserved bytes. Independent source matching and
+native build constraints are recorded in FEATURE_MATRIX.md.
+
+Remediation and owner follow-through
+The audit fixed local recovery and logout atomicity, dangling database links,
+grant status reporting, WebRTC verification and catalog redaction. See
+VALIDATION_2026-11-18.md for results. Keep private incident records out of
+Git. The owner still needs to review active sessions, MFA/passkeys, tokens,
+connected OAuth/GitHub Apps, collaborators, deploy keys, webhooks, Actions
+secrets and environments, and any available account or repository audit logs.
+Revoke unauthorized access and rotate credentials with plausible exposure.
+No account configuration, production deployment or credential was changed.

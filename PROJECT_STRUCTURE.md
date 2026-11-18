@@ -7,6 +7,7 @@ Prepared on 17 November 2026. This repository is an independent VPN/privacy proj
 ```text
 Mullvad-VPN/
 ├── README.md                     Current entry point and workflow
+├── PROJECT_HANDOFF.md           Implemented capabilities and task backlog
 ├── PROJECT_IDEA.txt              Detailed product vision and staged feasibility
 ├── PROJECT_STRUCTURE.md          This organization guide
 ├── AGENTS.md                     Current owner/agent operating instructions
@@ -57,9 +58,11 @@ Mullvad-VPN/
 │   ├── SECURITY_AND_PRIVACY.md    Protection boundaries and release requirements
 │   ├── LICENSING.md               Project/native/dependency license boundaries
 │   ├── LICENSE_AND_DEPENDENCY_AUDIT.md
+│   ├── FEATURE_MATRIX.md         Current platform capabilities and evidence
 │   ├── STATUS.md                  Current evidence, deferred checks and next work
 │   ├── TESTING.md                 Commands for later authorized validation
-│   ├── VALIDATION_2026-11-17.md    Executed post-restructuring checks and limits
+│   ├── VALIDATION_2026-11-17.md    Post-restructuring baseline
+│   ├── VALIDATION_2026-11-18.md    Current audit and hardening verification
 │   ├── REPOSITORY_RECOVERY.txt    Scope, preservation evidence and recovery limits
 │   └── repository/                Detailed authored/upstream/workspace catalogs
 └── AnalyseFuture/
@@ -70,7 +73,8 @@ Mullvad-VPN/
     ├── previous-github/          Previous PR template and Word-archive workflow
     ├── previous-tooling/         Original changed extractor/workflow contents
     ├── previous-code/            Exact originals before path/command changes
-    └── before-validation-c7b2977/ Originals before authorized validation fixes
+    ├── before-validation-c7b2977/ Originals before authorized validation fixes
+    └── before-handoff-86792c2/   Originals before the implementation handoff
 ```
 
 ## Every authored component has a defined role
@@ -121,7 +125,7 @@ Ignored/generated directories are accounted for separately:
 | `tools/**/__pycache__/` | Python interpreter bytecode caches; generated and ignored |
 | `.git/` | Git history/index/remotes/object metadata; preserved as Git internals, never reorganized as app content |
 
-The workspace catalog accounts for deeply nested filesystem entries without copying private content into Git. Git metadata is explicitly outside application categorization. Ignored dependencies and credentials are not committed merely to make the repository look complete. No existing unique source was intentionally hidden in generated output.
+The committed workspace catalog is a historical snapshot. New full refreshes group ignored entries and redact their paths and contents. Git metadata is explicitly outside application categorization. Ignored dependencies and credentials are not committed merely to make the repository look complete. No existing unique source was intentionally hidden in generated output.
 
 ## Preservation and uncertain material
 
@@ -139,7 +143,7 @@ Historical documents are classified by what they do: previous product direction,
 | [WORKSPACE_SUMMARY.txt](docs/repository/WORKSPACE_SUMMARY.txt) | Snapshot counts, traversal coverage and handling limits |
 | [PRESERVATION_MANIFEST.json](AnalyseFuture/PRESERVATION_MANIFEST.json) | Exact retained copy of every pre-restructuring tracked file |
 
-`python3 -B tools/catalog_repository.py` refreshes the authored/workspace records by static collection only. It does not execute applications, import their modules, build artifacts or run tests. These catalogs are navigation/preservation evidence; lexical references are not a fully resolved dependency graph or proof of safe behavior. Catalog files omit self-hashes to avoid recursive identities. Generated filesystem counts describe this machine snapshot and will change in future workspaces.
+`python3 -B tools/catalog_repository.py --project-only` refreshes only the authored file catalog. Omit `--project-only` to also generate a redacted workspace snapshot. Collection is static. It does not execute applications, import their modules, build artifacts or run tests. These catalogs are navigation/preservation evidence; lexical references are not a fully resolved dependency graph or proof of safe behavior. Catalog files omit self-hashes to avoid recursive identities. Generated filesystem counts describe this machine snapshot and will change in future workspaces.
 
 ## Where future work belongs
 
@@ -151,4 +155,4 @@ Historical documents are classified by what they do: previous product direction,
 
 ## Validation boundary
 
-The restructuring commit was delivered without final execution tests, as requested at that time. The owner subsequently re-enabled testing on 17 November 2026. See [the validation report](docs/VALIDATION_2026-11-17.md): the reorganized project and startup fix have local execution evidence, with two real-extension tests explicitly skipped under managed browser policy. Native vendor builds, live US routing and owner-device acceptance remain unverified. CI remains manually triggered.
+The restructuring commit was delivered without final execution tests, as requested at that time. The owner subsequently re-enabled testing on 17 November 2026. The [baseline](docs/VALIDATION_2026-11-17.md) and [latest validation](docs/VALIDATION_2026-11-18.md) record local execution evidence. Two actual-extension cases are skipped under managed browser policy. Native vendor builds, live US routing and owner-device acceptance remain unverified. CI remains manually triggered.

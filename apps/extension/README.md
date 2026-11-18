@@ -15,3 +15,12 @@ Grant expiry, verifier failure and proxy errors preserve proxy settings and show
 Permissions: `proxy` changes browser routing; `webRequest` and `webRequestAuthProvider` handle scoped proxy challenges; `privacy` reduces non-proxied WebRTC UDP; `alarms` schedules route/expiry checks; `storage` stores ephemeral sessions and restoration metadata. Broad HTTP/HTTPS host access is needed for proxy-auth observation for browsing sites, HTTPS API requests and route verification. Only HTTPS origins are accepted for the control API and verification. Repeated authentication challenges for a request are cancelled after one credential submission. No content scripts, telemetry, remote executable code, external messaging, public signup or shared gateway password are included.
 
 Run `node --test tests/extension/extension.test.js tests/extension/extension-browser.test.js` for focused lifecycle/auth checks and browser UI smoke. The managed Chromium in this cloud environment enforces `ExtensionInstallBlocklist: ["*"]`: actual unpacked MV3 load and browser proxy/auth integration are blocked, and the test reports that as skipped. Its separate popup smoke runs real Chromium with an explicitly simulated extension runtime. These checks do not establish live Chrome routing or leak protection. Test in an owner-controlled Chrome profile that permits unpacked development extensions before release; do not weaken managed browser policies.
+
+For T01 acceptance, use an authorized Linux runner with a Chromium executable that permits command-line loading of unpacked extensions, plus OpenSSL and NSS `certutil` (`libnss3-tools` on Debian and Ubuntu). From the repository root, after the frozen dependency install, run:
+
+```sh
+CHROMIUM_PATH=/absolute/path/to/authorized/chromium REQUIRE_MV3_ACCEPTANCE=1 \
+  node --test tests/extension/extension-browser.test.js tests/extension/chromium-route.test.js
+```
+
+Acceptance requires all three tests to pass with zero skips, including actual MV3 loading and authenticated loopback HTTP and HTTPS forwarding. A known managed browser restriction or missing NSS tooling fails this run. The browsers use disposable test profiles, and the routing test imports its test certificate only into a disposable trust store. Record the commit, OS, browser version and test counts with the results.

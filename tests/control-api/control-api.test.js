@@ -39,6 +39,52 @@ test('SQLite hashes secrets, session/grant expiry, durable quota, recovery revok
   } finally { store.close(); await rm(dir, { recursive: true, force: true }); }
 });
 
+test('founder recovery commits the password change and authorization revocation together', () => {
+  const store = new Store(':memory:');
+  const replacement = 'replacement-test-password-123';
+  try {
+    assert.throws(() => store.recover(replacement), /Founder account does not exist/);
+    store.createAccount('founder', password);
+    const session = store.login('founder', password);
+    const grant = store.issue(store.session(session.token).hash, 'fixture');
+
+    // Simulate a failed final write after the password and grant updates.
+    store.db.exec("CREATE TRIGGER recovery_fault BEFORE DELETE ON sessions BEGIN SELECT RAISE(ABORT, 'fixture recovery fault'); END");
+    assert.throws(() => store.recover(replacement), /fixture recovery fault/);
+    assert.ok(store.session(session.token));
+    assert.ok(store.authorize(grant.username, grant.password));
+    assert.equal(store.login('founder', replacement), null);
+    assert.ok(store.login('founder', password));
+
+    store.db.exec('DROP TRIGGER recovery_fault');
+    store.recover(replacement);
+    assert.equal(store.session(session.token), null);
+    assert.equal(store.authorize(grant.username, grant.password), null);
+    assert.equal(store.login('founder', password), null);
+    assert.ok(store.login('founder', replacement));
+  } finally { store.close(); }
+});
+
+test('session logout returns revocations from a successful retry after a failed write', () => {
+  const store = new Store(':memory:');
+  try {
+    store.createAccount('founder', password);
+    const session = store.login('founder', password);
+    const { hash } = store.session(session.token);
+    const grant = store.issue(hash, 'fixture');
+
+    store.db.exec("CREATE TRIGGER logout_fault BEFORE DELETE ON sessions BEGIN SELECT RAISE(ABORT, 'fixture logout fault'); END");
+    assert.throws(() => store.revokeSession(hash), /fixture logout fault/);
+    assert.ok(store.session(session.token));
+    assert.ok(store.authorize(grant.username, grant.password));
+
+    store.db.exec('DROP TRIGGER logout_fault');
+    assert.deepEqual(store.revokeSession(hash), [grant.id]);
+    assert.equal(store.session(session.token), null);
+    assert.equal(store.authorize(grant.username, grant.password), null);
+  } finally { store.close(); }
+});
+
 test('real TLS API: closed signup, auth, grant lifecycle, CORS, limits, admin status', async () => {
   const tls = await createTlsFixture(), store = new Store(':memory:'), revoked = [];
   store.createAccount('founder', password);

@@ -3,13 +3,16 @@ import assert from 'node:assert/strict';
 import https from 'node:https';
 import tls from 'node:tls';
 import net from 'node:net';
+import { execFile } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import { initDevelopment, startDevelopment } from '../../scripts/development/dev.mjs';
-import { createBackup, restoreBackup } from '../../scripts/recovery/backup.mjs';
-import { Store } from '../../services/control-api/store.ts';
+
+const run = promisify(execFile);
 
 async function setup(t) {
   const stateDir = await mkdtemp(join(tmpdir(), 'private-route-dev-'));
@@ -28,6 +31,23 @@ function request(port, ca, path, { method = 'GET', body, token } = {}) {
       res.on('end', () => resolve({ status: res.statusCode, body: JSON.parse(Buffer.concat(chunks).toString()) }));
     });
     req.on('error', reject); req.end(body ? JSON.stringify(body) : undefined);
+  });
+}
+
+function connectProxy(running, ca, grant) {
+  const fixture = `localhost:${running.fixtureAddress.port}`;
+  const authorization = Buffer.from(`${grant.username}:${grant.password}`).toString('base64');
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      host: '127.0.0.1', port: running.gatewayAddress.port, ca, method: 'CONNECT', path: fixture, agent: false,
+      headers: { Host: fixture, 'Proxy-Authorization': `Basic ${authorization}` },
+    });
+    req.on('error', reject);
+    req.on('connect', (response, socket, head) => {
+      if (head.length) socket.unshift(head);
+      resolve({ status: response.statusCode, socket });
+    });
+    req.end();
   });
 }
 
@@ -96,13 +116,9 @@ test('explicit fixture uses an issued grant and real TLS CONNECT without claimin
     assert.equal(grants.status, 201);
     assert.equal(grants.body.gateway.live, false);
     assert.equal(grants.body.gateway.country, 'LOCAL');
-    socket = tls.connect({ host: '127.0.0.1', port: running.gatewayAddress.port, ca: f.ca });
-    socket.on('error', () => {});
-    await once(socket, 'secureConnect');
-    const authorization = Buffer.from(`${grants.body.username}:${grants.body.password}`).toString('base64');
-    socket.write(`CONNECT localhost:${running.fixtureAddress.port} HTTP/1.1\r\nHost: localhost:${running.fixtureAddress.port}\r\nProxy-Authorization: Basic ${authorization}\r\n\r\n`);
-    const [header] = await once(socket, 'data');
-    assert.match(header.toString(), /200 Connection Established/);
+    const tunnel = await connectProxy(running, f.ca, grants.body);
+    socket = tunnel.socket;
+    assert.equal(tunnel.status, 200);
     inner = tls.connect({ socket, servername: 'localhost', ca: f.ca });
     inner.on('error', () => {});
     await once(inner, 'secureConnect');
@@ -120,33 +136,69 @@ test('explicit fixture uses an issued grant and real TLS CONNECT without claimin
 });
 
 
-test('restored database starts the real API after owner recovery invalidates old sessions and grants', async (t) => {
-  const f = await setup(t);
-  let running = await startDevelopment({ stateDir: f.stateDir, fixture: true });
-  let oldToken;
+test('simulated off-host backup handoff restores usage and requires fresh API and proxy credentials', async (t) => {
+  // These independent directories simulate hosts on the same local machine.
+  const primary = await setup(t);
+  const recovery = await setup(t);
+  await rm(recovery.paths.database);
+  await rm(recovery.paths.credentials);
+  const live = await startDevelopment({ stateDir: primary.stateDir, fixture: true });
+  let oldToken, oldGrant, usedBytes;
   try {
-    const login = await request(running.apiAddress.port, f.ca, '/v1/login', { method: 'POST', body: f.credentials });
+    const port = live.apiAddress.port;
+    const login = await request(port, primary.ca, '/v1/login', { method: 'POST', body: primary.credentials });
+    assert.equal(login.status, 200);
     oldToken = login.body.token;
-    assert.equal((await request(running.apiAddress.port, f.ca, '/v1/grants', { method: 'POST', body: { gatewayId: 'fixture' }, token: oldToken })).status, 201);
-  } finally { await running.close(); }
-  const archive = join(f.stateDir, 'recovery.enc');
-  const backupPassword = 'fixture-only-database-backup-passphrase';
-  await createBackup(f.paths.database, archive, { password: backupPassword });
-  await rename(f.paths.database, join(f.stateDir, 'before-restore.sqlite'));
-  await restoreBackup(archive, f.paths.database, { password: backupPassword });
+    const grant = await request(port, primary.ca, '/v1/grants', { method: 'POST', body: { gatewayId: 'fixture' }, token: oldToken });
+    assert.equal(grant.status, 201);
+    oldGrant = grant.body;
+    const tunnel = await connectProxy(live, primary.ca, oldGrant);
+    tunnel.socket.destroy();
+    assert.equal(tunnel.status, 200);
+    const status = await request(port, primary.ca, '/v1/status', { token: oldToken });
+    usedBytes = status.body.account.usedBytes;
+    assert.ok(usedBytes > 0);
+  } finally { await live.close(); }
+
+  const backup = fileURLToPath(new URL('../../scripts/recovery/backup.mjs', import.meta.url));
+  const account = fileURLToPath(new URL('../../services/control-api/cli.ts', import.meta.url));
+  const backupEnv = { BACKUP_PASSWORD: 'fixture-only-database-backup-passphrase' };
+  const previousDatabase = await readFile(primary.paths.database);
+  const archive = join(primary.stateDir, 'recovery.enc');
+  const transferred = join(recovery.stateDir, 'recovery.enc');
+  await run(process.execPath, [backup, 'backup', primary.paths.database, archive], { cwd: primary.stateDir, env: backupEnv });
+  await copyFile(archive, transferred);
+  await run(process.execPath, [backup, 'restore', transferred, recovery.paths.database], { cwd: recovery.stateDir, env: backupEnv });
+
   const recoveredPassword = 'fixture-only-new-founder-password';
-  const store = new Store(f.paths.database);
-  try { store.recover(recoveredPassword); } finally { store.close(); }
-  running = await startDevelopment({ stateDir: f.stateDir });
+  await run(process.execPath, [account, 'recover', recovery.paths.database], {
+    cwd: recovery.stateDir, env: { FOUNDER_PASSWORD: recoveredPassword },
+  });
+
+  const running = await startDevelopment({ stateDir: recovery.stateDir, fixture: true });
   try {
     const port = running.apiAddress.port;
-    assert.equal((await request(port, f.ca, '/v1/status', { token: oldToken })).status, 401);
-    assert.equal((await request(port, f.ca, '/v1/login', { method: 'POST', body: f.credentials })).status, 401);
-    const login = await request(port, f.ca, '/v1/login', { method: 'POST', body: { username: 'founder', password: recoveredPassword } });
+    assert.equal((await request(port, recovery.ca, '/v1/status', { token: oldToken })).status, 401);
+    assert.equal((await request(port, recovery.ca, '/v1/login', { method: 'POST', body: primary.credentials })).status, 401);
+    const staleTunnel = await connectProxy(running, recovery.ca, oldGrant);
+    staleTunnel.socket.destroy();
+    assert.equal(staleTunnel.status, 407);
+
+    const login = await request(port, recovery.ca, '/v1/login', { method: 'POST', body: { username: 'founder', password: recoveredPassword } });
     assert.equal(login.status, 200);
-    const status = await request(port, f.ca, '/v1/status', { token: login.body.token });
+    const token = login.body.token;
+    const status = await request(port, recovery.ca, '/v1/status', { token });
     assert.equal(status.body.account.username, 'founder');
+    assert.equal(status.body.account.usedBytes, usedBytes);
     assert.equal(status.body.grants.length, 1);
-    assert.equal(status.body.grants[0].revoked, 1);
+    assert.equal(status.body.grants[0].id, oldGrant.id);
+    assert.equal(status.body.grants[0].state, 'revoked');
+
+    const grant = await request(port, recovery.ca, '/v1/grants', { method: 'POST', body: { gatewayId: 'fixture' }, token });
+    assert.equal(grant.status, 201);
+    const tunnel = await connectProxy(running, recovery.ca, grant.body);
+    tunnel.socket.destroy();
+    assert.equal(tunnel.status, 200);
   } finally { await running.close(); }
+  assert.ok((await readFile(primary.paths.database)).equals(previousDatabase), 'The original database remains available for rollback');
 });

@@ -1,9 +1,13 @@
-import { readFileSync, realpathSync, existsSync, lstatSync } from 'node:fs';
+import { readFileSync, realpathSync, lstatSync } from 'node:fs';
+import { X509Certificate } from 'node:crypto';
+import { isIP } from 'node:net';
 import { isAbsolute, dirname, relative, resolve } from 'node:path';
+import { checkServerIdentity, createSecureContext } from 'node:tls';
 import { fileURLToPath } from 'node:url';
 import { Store } from '../services/control-api/store.ts';
 import { createControlApi } from '../services/control-api/server.ts';
 import { createGateway } from '../services/gateway/index.js';
+import { isPublicAddress } from '../services/gateway/policy.js';
 import { validateGateway } from '../apps/extension/core.ts';
 
 const checkout = realpathSync(fileURLToPath(new URL('..', import.meta.url)));
@@ -11,7 +15,7 @@ function externalFile(path) {
   if (typeof path !== 'string' || !isAbsolute(path)) throw new Error('Runtime files require absolute paths outside checkout');
   const parent = realpathSync(dirname(path));
   const actual = resolve(parent, path.split('/').at(-1));
-  if (existsSync(actual) && lstatSync(actual).isSymbolicLink()) throw new Error('Runtime file symlinks are forbidden');
+  if (lstatSync(actual, { throwIfNoEntry: false })?.isSymbolicLink()) throw new Error('Runtime file symlinks are forbidden');
   const rel = relative(checkout, actual);
   if (!(rel === '..' || rel.startsWith('../')) || isAbsolute(rel)) throw new Error('Runtime secrets and database must remain outside checkout');
   return actual;
@@ -34,16 +38,42 @@ export function validateConfig(input) {
   if (gateway.port !== proxy.port) throw new Error('Advertised gateway port must match listener');
   if (gateway.live && !['authorized', 'zeroAdditionalCostVerified', 'providerPermitsProxy', 'usRegionVerified']
     .every(name => input.preflight?.[name] === true)) throw new Error('Live gateway requires completed owner preflight attestations');
+  if (gateway.live && (!isIP(gateway.expectedIp) || !isPublicAddress(gateway.expectedIp))) {
+    throw new Error('Live gateway requires a public expected exit IP');
+  }
   const allowedOrigins = input.extensionOrigins ?? [];
   if (!Array.isArray(allowedOrigins) || allowedOrigins.length > 10 || allowedOrigins.some(value =>
     typeof value !== 'string' || !/^chrome-extension:\/\/[a-p]{32}$/.test(value))) throw new Error('Exact extension origins required');
-  return { management, proxy, gateway, allowedOrigins,
+  return { management, proxy, gateway, allowedOrigins, apiOrigin: origin.origin,
     database: externalFile(input.database),
     tls: { key: externalFile(input.tls?.key), cert: externalFile(input.tls?.cert) } };
 }
 
+function readTls(config) {
+  return { key: readFileSync(config.tls.key), cert: readFileSync(config.tls.cert) };
+}
+
+function checkSharedTlsIdentity(config, tls) {
+  createSecureContext(tls);
+  const cert = new X509Certificate(tls.cert);
+  const now = Date.now();
+  if (now < cert.validFromDate.getTime() || now >= cert.validToDate.getTime()) {
+    throw new Error('TLS leaf certificate is outside its validity period');
+  }
+  const names = [
+    ['control API', new URL(config.apiOrigin).hostname],
+    ['gateway', config.gateway.host],
+  ];
+  const identity = cert.toLegacyObject();
+  for (const [label, hostname] of names) {
+    if (checkServerIdentity(hostname.replace(/^\[|\]$/g, ''), identity)) {
+      throw new Error(`TLS certificate does not match the ${label} hostname`);
+    }
+  }
+}
+
 export async function start(config) {
-  const tls = { key: readFileSync(config.tls.key), cert: readFileSync(config.tls.cert) };
+  const tls = readTls(config);
   const store = new Store(config.database);
   if (!store.status().account) { store.close(); throw new Error('Create founder account before starting services'); }
   const gateway = createGateway({ tls, authorize: (u, p) => store.authorize(u, p),
@@ -60,15 +90,23 @@ export async function start(config) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  let runtime;
+  const [mode, ...rest] = process.argv.slice(2);
   try {
+    if (rest.length || (mode && mode !== '--check-config')) throw new Error('Usage: node infrastructure/serve.mjs [--check-config]');
     if (!process.env.PROXY_CONFIG) throw new Error('Set PROXY_CONFIG to an absolute external configuration path');
     const configPath = externalFile(process.env.PROXY_CONFIG);
     const config = validateConfig(JSON.parse(readFileSync(configPath, 'utf8')));
-    runtime = await start(config);
-    console.log('Configured proxy and loopback management listeners started. Live deployment acceptance remains required.');
-    for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, async () => { await runtime.close(); process.exitCode = 0; });
+    if (mode === '--check-config') {
+      checkSharedTlsIdentity(config, readTls(config));
+      console.log('Configuration and TLS identity checks passed. No listeners or database were opened.');
+    } else {
+      const runtime = await start(config);
+      console.log('Configured proxy and loopback management listeners started. Live deployment acceptance remains required.');
+      for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, async () => { await runtime.close(); process.exitCode = 0; });
+    }
   } catch (error) {
-    console.error(`Service startup failed: ${error.message}`); process.exitCode = 1;
+    const detail = error instanceof SyntaxError ? 'Invalid configuration JSON' : error.message;
+    const operation = mode === '--check-config' ? 'Configuration check' : 'Service startup';
+    console.error(`${operation} failed: ${detail}`); process.exitCode = 1;
   }
 }

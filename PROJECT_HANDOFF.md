@@ -29,38 +29,7 @@ The browser proxy does not protect unrelated applications, all browser-internal 
 
 ## Implemented features and evidence
 
-“Implemented” below means code exists. “Locally validated” refers to bounded local tests, not production acceptance.
-
-| Feature | Implementation | Evidence and remaining boundary |
-| --- | --- | --- |
-| Chrome MV3 client | Typed popup, service worker, connection-state controller, HTTPS API/verifier validation | Controller/worker tests and real Chromium popup checks exist. Popup runtime is simulated; actual MV3 loading remains a separate skipped check in managed cloud Chromium. |
-| Proxy setup and restoration | Proxy ownership checks, scoped control-origin bypass, explicit Disconnect, restoration of owned proxy/privacy settings | Local lifecycle tests; owner-device policy conflicts and routing still require T01/T02. |
-| Scoped proxy authentication | Basic proxy credentials supplied only to the exact configured gateway host/port; repeat challenge cancelled | Controller tests and real TLS service tests. Actual Chrome proxy-auth event path needs T01. |
-| Route verification and expiry states | Expected IP comparison; fixture/live labels; errors and expiry retain proxy settings | Local verified/error/expiry cases. Fixture success does not prove geography or leak protection. |
-| Ephemeral client sessions | Extension session storage for credentials/tokens; nonsecret restoration metadata persisted separately | Unit lifecycle checks. Browser restart intentionally loses session secrets; usability and real restart acceptance remain. |
-| Founder HTTPS control API | Login/logout, gateway directory, status, grant issue/revoke, exact extension-origin allowlist and operations assets | TLS API/security/integration suites. Single founder only, no public account enrollment. Health responses deliberately report `releaseBlocked: true`. |
-| SQLite identity and durable state | Salted scrypt password hashing, hashed session/grant secrets, expiry/pruning, aggregate account usage | Account/retention/restart tests. Default sessions are one hour, grants up to five minutes; new grant replaces the old active grant. Not multi-tenant storage. |
-| Authenticated TLS forward gateway | HTTP forwarding and HTTPS CONNECT, authorization, active revocation, expiry, connection limits and byte quotas | Gateway and cross-component tests against controlled targets. Website HTTPS is not intercepted. HTTP beyond the gateway remains HTTP. |
-| Destination and DNS policy | Public destination restrictions, denial of private/loopback/metadata/special-use IPs, validation of all DNS answers, checked IP pinned for socket | Negative destination/DNS tests. Deliberate local fixture exception exists only in explicit dev fixture mode. Provider billing limits are separate from application quotas. |
-| Private operations/help UI | Founder login, aggregate usage, gateway descriptions, grant status/revocation, installation/scope guidance | Dashboard/browser and authorization tests. Not a public marketing/customer/admin platform; gateway descriptions are configuration, not health observations. |
-| Local development runtime | Repeatable private `.local/` initialization; loopback HTTPS API/proxy; optional verifier fixture; shutdown/startup cleanup | Runtime tests, initialization repetition and trusted-TLS CLI smoke. Dev certificates expire after 30 days; trust them only for isolated local testing. |
-| Configured host runtime | Private config validation, account/preflight checks, API/gateway assembly, clean shutdown | Runtime tests. Service/firewall files are unapplied examples; no host provisioned. |
-| Encrypted recovery | Consistent SQLite backup, AES-256-GCM/scrypt encryption, authenticated restore, permissions/integrity/overwrite protections | Local tampering/recovery tests. Off-host backup and real deployment restore/rollback remain T10. Restored authorization must be invalidated through account recovery. |
-| Private extension packaging | Deterministic asset allowlist, dependency notices, ZIP and SHA-256 | Packaging determinism, contents, secret exclusion, checksum and archive tests. No signed release/update service or store upload. |
-| Source preservation and offline extraction | Original native ZIPs, checksum-pinned extraction, permission/symlink verification, refusal to overwrite mismatches | 16 Python safety tests and archive verification. 8,485 regular files/four symlinks across 12,017 entries; no upstream native execution established. |
-| Repository inventory and verification | File/reference/workspace catalogs, preservation manifest, pinned dependencies, manual CI workflow | Static catalogs and recorded local tests. Catalogs are navigation evidence, not a semantic/security audit of all code. CI has not been claimed as run. |
-
-### Latest known validation
-
-[docs/VALIDATION_2026-11-17.md](docs/VALIDATION_2026-11-17.md) records the baseline validation; the cloud-environment setup in this conversation also reproduced the browser build/package, Node/Python tests and source verification.
-
-- **61 Node tests: 59 passed, 0 failed, 2 skipped** under managed Chromium policy.
-- **16 Python tests passed**; strict TypeScript, extension build/package, checksum/archive verification and source extraction passed.
-- Local trusted TLS health/login, unauthorized access rejection, empty default gateway list and explicit fixture response were verified during setup. Registry audit reported zero known vulnerabilities at that time.
-- Actual unpacked MV3 loading and actual browser proxy routing/authentication were **skipped**, not passed. The separate popup UI test uses a simulated extension runtime.
-- Native builds/tunnels, owner-device leak acceptance, live US exits, production recovery and public launch remain **unrun/unverified**. Passing tests and scanners are not a security certification.
-
-This documentation change does not reclassify those outcomes. Each implementation PR must record results for its own final commit and platform.
+The [feature matrix](docs/FEATURE_MATRIX.md) maps implemented capabilities to source and local evidence and records browser and native platform prerequisites. Use the [latest validation report](docs/VALIDATION_2026-11-18.md) for verification of this branch and the [prior report](docs/VALIDATION_2026-11-17.md) for the restructuring baseline. Each implementation PR records results for its own tested revision and platform.
 
 ## How the components connect
 
@@ -181,6 +150,7 @@ Every active project file is described below. Historical copies are indexed in t
 | [tests/runtime/dev.test.js](tests/runtime/dev.test.js) | Repeatable initialization, trusted TLS/default gateways, fixture proxy forwarding/CONNECT, retained-state recovery and occupied-port cleanup. |
 | `tests/helpers/` | Shared isolated test infrastructure. |
 | [tests/helpers/tls.js](tests/helpers/tls.js) | Temporary verified TLS identities and cleanup; does not install a production CA. |
+| [tests/helpers/chromium-extension.js](tests/helpers/chromium-extension.js) | Read-only managed policy and prerequisite checks for strict MV3 acceptance. |
 
 ### `tools/` and `upstream/`: inventory and separately licensed assets
 
@@ -188,14 +158,16 @@ Every active project file is described below. Historical copies are indexed in t
 | --- | --- |
 | `tools/` | Source-preservation and static inventory tools, not a VPN implementation. |
 | [tools/extract_upstreams.py](tools/extract_upstreams.py) | Offline pinned ZIP verification and safe recreation; validates layout, contents, permissions and symlinks; refuses mismatched existing source. |
+| [tools/check_native_host.py](tools/check_native_host.py) | Reports Linux tunnel test prerequisites without opening a tunnel or changing routes. |
 | [tools/catalog_repository.py](tools/catalog_repository.py) | Static project/workspace file and lexical-reference catalogs; never executes application imports; private runtime contents and Git internals excluded. |
 | [tools/.gitignore](tools/.gitignore) | Python cache exclusion. |
 | `tools/tests/` | Extractor filesystem safety regressions. |
 | [tools/tests/test_extract_upstreams.py](tools/tests/test_extract_upstreams.py) | Digest, traversal, symlink/mode, existing-edit and changed/missing/additional-entry checks. |
+| [tools/tests/test_check_native_host.py](tools/tests/test_check_native_host.py) | Effective capability and TUN device-access check regressions. |
 | `upstream/` | Provenance/handling boundary for third-party source. |
 | [upstream/README.txt](upstream/README.txt) | Exact hashes, original project URLs, extraction instructions and licensing/provenance limits. |
 | `upstream/archives/` | Immutable original ZIP assets; preserve their bytes and notices. |
-| [upstream/archives/mullvadvpn-app-main.zip](upstream/archives/mullvadvpn-app-main.zip) | Unbuilt Mullvad source: native daemon/CLI, networking libraries, desktop/mobile clients and build inputs. No vendor infrastructure transferred. |
+| [upstream/archives/mullvadvpn-app-main.zip](upstream/archives/mullvadvpn-app-main.zip) | Mullvad source for the native daemon, CLI, networking libraries, desktop/mobile clients and build inputs. The Linux CLI was built separately. No vendor infrastructure transferred. |
 | [upstream/archives/amnezia-client-dev.zip](upstream/archives/amnezia-client-dev.zip) | Unbuilt Amnezia source: Qt/C++/QML client, service/IPC and provisioning/protocol assets; not integrated into our service. |
 
 ### `docs/`: current operational guidance and catalogs
@@ -242,6 +214,7 @@ Status meanings: **ready** = useful engineering can begin locally; **prerequisit
 
 - **Goal:** Replace the two cloud-policy skips with actual MV3 and browser-proxy evidence on a legitimately permitted runner.
 - **Needs:** Owner-controlled Chrome/Chromium profile/device that permits unpacked extensions, isolated trusted dev CA, NSS tools where required, exact extension origin in API config. Preserve cloud-managed policies.
+- **Local deliverable:** The [strict acceptance command](apps/extension/README.md) requires a permitted runner and fails on known skip conditions.
 - **Work:** Run the two browser suites; inspect actual worker loading, Basic proxy-auth scoping, verifier IP, expiry/revocation, explicit disconnect, browser/worker restart, stale sessions and owned-setting restoration. Exercise real policy/ownership conflicts without changing unrelated settings.
 - **Files:** `tests/extension/`, `apps/extension/`, `docs/LOCAL_DEVELOPMENT.md`, a dated acceptance report.
 - **Done when:** Report exact commit/OS/browser versions, commands, executed counts and observed behavior. All required scenarios pass on that runner or remaining failures are explicitly open. Simulated runtime or skipped checks cannot close this task. Run relevant controller/integration suites if fixes are needed.
@@ -263,6 +236,7 @@ Status meanings: **ready** = useful engineering can begin locally; **prerequisit
 
 ### T04 — Reproduce the selected native build (P1, depends on T03)
 
+- **Local evidence:** The selected pinned Linux CLI target built and passed the version and help checks. [Build record](docs/NATIVE_LINUX_BUILD.md)
 - **Needs:** Target/toolchain/source inputs established by T03; sufficient resources. Owner decisions only where required by the selected integration/distribution action.
 - **Work:** Install pinned build prerequisites, resolve trustworthy submodule/generated inputs, build the single chosen target and capture sanitized logs. Verify any downloaded artifact signatures/checksums/TLS; do not override expected hashes. Repeat from clean target outputs without discarding unique work. Add reusable setup guidance.
 - **Files/output:** Chosen tracked build instructions/helpers and a dated native-build report; update T03 findings and status. Generated binaries remain outputs.
@@ -278,6 +252,7 @@ Status meanings: **ready** = useful engineering can begin locally; **prerequisit
 ### T06 — Smallest real native tunnel proof (P1, prerequisite required)
 
 - **Depends on:** T04/T05 plus a suitable authorized privileged test machine and independently authorized WireGuard endpoint; apply T07 if obtaining a host.
+- **Local deliverable:** `python3 -B tools/check_native_host.py` checks Linux host prerequisites without changing network state.
 - **Work:** Prove tunnel establishment and intended traffic routing, DNS resolution, IPv4/IPv6 behavior, endpoint reachability, connect/disconnect cleanup, revocation/key rotation, network loss, restart and configured blocking behavior. Compare routes/interfaces/resolvers/firewall before/during/after. Test traffic outside the intended tunnel under the selected mode.
 - **Files/output:** Native integration tests/helpers and dated platform-specific evidence with secret-free configuration schema.
 - **Done when:** Repeatable real-endpoint tests cover success and failure without disturbing unrelated host networking. Record any unsupported traffic/scenario. A local proxy fixture, native binary or virtual interface alone is insufficient.
@@ -286,6 +261,7 @@ Status meanings: **ready** = useful engineering can begin locally; **prerequisit
 
 - **Owner work:** Identify an authorized host/account/region, verify proxy/VPN terms, actual compute/disk/public-IP/egress limits, trial-expiry effects, billing controls and emergency shutdown access. Confirm incremental cost stays $0 or explicitly authorize a changed budget.
 - **Engineering work:** Prepare a sanitized host/region/capacity/cost checklist and management/data-plane exposure design. Do not create accounts, accept charging trials or provision before authorization.
+- **Local deliverable:** The [offline runtime check](infrastructure/README.md) validates a shared TLS identity and gateway configuration before startup.
 - **Files/output:** `docs/DEPLOYMENT.md`, `docs/COST_POLICY.md`, private operational records outside Git.
 - **Done when:** Owner authorization, actual limits/provider terms, account-controlled shutdown and required access are confirmed. Free-tier advertisements and a country string do not pass the gate. Never put account secrets or billing screenshots with private details in a PR.
 
@@ -304,6 +280,7 @@ Status meanings: **ready** = useful engineering can begin locally; **prerequisit
 ### T10 — Off-host recovery and deployment rollback (P1, prerequisite required)
 
 - **Already exists:** Local encrypted SQLite backup/restore and recovery tests; preserve them.
+- **Local deliverable:** The [CLI recovery drill](scripts/README.md) verifies an encrypted handoff between isolated directories on one machine, including fresh and stale access checks.
 - **Needs:** Approved existing off-host storage and deployed test target; T08 for production-like validation.
 - **Work:** Define encrypted copy/retention/access/deletion, owner-controlled passphrase recovery, restore destination, stopped-service procedure and rollback. Restore a copy, perform account recovery to revoke stale sessions/grants, start the service and validate account/usage/denial of stale authorization. Test reversal to the previous deployment.
 - **Files:** `scripts/recovery/`, `tests/operations/`, `tests/integration/`, recovery/deployment runbooks.
@@ -391,12 +368,9 @@ Status meanings: **ready** = useful engineering can begin locally; **prerequisit
 - **Work:** Prefer deterministic diagnostics first. If justified, build a reviewed-knowledge helper with minimal redacted inputs, consent, source references and evaluation. Never send browsing history, raw captures, keys/passwords/tokens or customer traffic for model training. AI must not silently change routing/firewall/access rules.
 - **Done when:** Evaluation covers correctness, unsupported questions, data minimization and safe authorization boundaries. No paid API adoption without approval and no claim an AI helper replaces security/operations accountability.
 
-### T24 — Reproduce and correct dashboard exhausted-grant status (P1, ready)
+### T24 — Dashboard exhausted-grant status (P1, complete locally)
 
-- **Source finding:** `services/control-api/store.ts` returns `state` and `active`, including quota-exhausted grants. `apps/operations/app.js` derives active count/“Authorized” display only from revocation and expiry, ignoring exhaustion. The existing website fixture omits those server fields. This discrepancy was identified by source inspection; no new regression has yet been run and no fix is included in this handoff.
-- **Work:** First reproduce with an unexpired, unrevoked grant whose grant or account quota is exhausted. Add a real API status/Chromium UI regression, then render active/exhausted/expired/revoked states and counts consistently. Decide explicitly whether an exhausted grant still offers a revoke action; do not imply revocability makes it traffic-authorized. Handle malformed/unknown state conservatively.
-- **Files:** `apps/operations/app.js`, `apps/operations/index.html` if copy needs updating, `tests/operations/website.test.js` and API/integration tests as needed.
-- **Done when:** The regression fails before the correction, passes afterward, and active counts/status match actual API authorization for active, exhausted, expired and revoked records. Preserve safe text rendering, session/revoke/logout behavior and server quota enforcement. Run relevant operations/API tests and the complete check workflow before PR review.
+The dashboard uses the API's grant state for labels, active count and revoke actions. A managed Chromium UI regression covers all known statuses and invalid data. A separate TLS API test verifies that a quota-exhausted grant is inactive and cannot authorize traffic. See [the validation report](docs/VALIDATION_2026-11-18.md).
 
 ## Validation commands and evidence contract
 
@@ -413,7 +387,7 @@ python3 tools/extract_upstreams.py
 python3 tools/extract_upstreams.py --verify-only
 ```
 
-Choose relevant checks for each PR; full browser/service changes should use the complete check/package workflow, native changes need their selected build/behavior matrix, and extractor changes need Python safety tests and source verification. A documentation-only PR needs path/link/inventory/consistency and whitespace checks rather than invented runtime results. Refresh static catalogs when the file set or relevant paths change with `python3 -B tools/catalog_repository.py`; inspect generated diffs and preserve redaction.
+Choose relevant checks for each PR. Full browser/service changes use the complete check/package workflow. Native changes need the selected build and behavior matrix. Extractor changes need Python safety tests and source verification. For a documentation-only PR, verify links, inventory, consistency and whitespace. Refresh the authored catalog with `python3 -B tools/catalog_repository.py --project-only` when files or references change.
 
 For local development, run `npm run dev:init`, then `npm run dev`. Verify with `curl --fail --silent --show-error --noproxy '*' --cacert .local/localhost.pem https://localhost:9443/healthz`. Explicit `npm run dev -- --fixture` is a controlled local test only; stop the existing runner before changing modes. Do not terminate another tool's service or publish loopback preview links. See [local development](docs/LOCAL_DEVELOPMENT.md) for certificate expiry/trust, exact origins and private credentials.
 

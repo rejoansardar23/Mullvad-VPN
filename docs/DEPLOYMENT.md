@@ -10,6 +10,8 @@
 - Validate provider's free tier on the actual billing screen, not by advertising alone.
 - Document emergency shutdown and quota monitoring; no paid fallback.
 
+For a shared TLS certificate, run the offline configuration check before starting the runtime. On the approved host, verify the management access path and both TLS endpoints from the owner browser before exposing the gateway to traffic. Record provider approval, quotas, costs and shutdown access separately from configuration output. [Runtime configuration check](../infrastructure/README.md)
+
 Potential free-host candidate: Oracle Cloud Always Free, **not guaranteed** (home-region restrictions, capacity availability, identification/payment-card verification rules, and possible idle-instance reclamation). A user-owned, authorized US host may be another option subject to network and provider rules.
 
 ## Deployment design

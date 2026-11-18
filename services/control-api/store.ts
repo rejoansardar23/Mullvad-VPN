@@ -1,6 +1,6 @@
 import { DatabaseSync, type SQLOutputValue } from 'node:sqlite';
 import { randomBytes, createHash, scryptSync, timingSafeEqual } from 'node:crypto';
-import { mkdirSync, chmodSync, existsSync, lstatSync } from 'node:fs';
+import { mkdirSync, chmodSync, lstatSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 const secret = () => randomBytes(32).toString('base64url');
@@ -69,7 +69,7 @@ export class Store {
     this.now = now; this.sessionMs = sessionMs; this.grantMs = grantMs;
     if (path !== ':memory:') {
       mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-      if (existsSync(path) && lstatSync(path).isSymbolicLink()) throw new Error('Database symlinks are forbidden');
+      if (lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink()) throw new Error('Database symlinks are forbidden');
     }
     this.db = new DatabaseSync(path);
     if (path !== ':memory:') chmodSync(path, 0o600);
@@ -171,17 +171,32 @@ export class Store {
     this.db.prepare('DELETE FROM sessions WHERE expires_at<=?').run(this.now());
   }
   revokeSession(sessionHash: string): string[] {
-    const ids = (this.db.prepare('SELECT id FROM grants WHERE session_hash=? AND revoked=0').all(sessionHash) as GrantIdRow[]).map(g => g.id);
-    this.db.prepare('UPDATE grants SET revoked=1,revoked_at=? WHERE session_hash=?').run(this.now(), sessionHash);
-    this.db.prepare('DELETE FROM sessions WHERE hash=?').run(sessionHash);
-    return ids;
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const grants = this.db.prepare(`UPDATE grants SET revoked=1,revoked_at=? WHERE session_hash=? AND revoked=0
+        RETURNING id`).all(this.now(), sessionHash) as GrantIdRow[];
+      this.db.prepare('DELETE FROM sessions WHERE hash=?').run(sessionHash);
+      this.db.exec('COMMIT');
+      return grants.map(grant => grant.id);
+    } catch (error) {
+      if (this.db.isTransaction) this.db.exec('ROLLBACK');
+      throw error;
+    }
   }
   recover(password: string): void {
     if (typeof password !== 'string' || password.length < 16 || password.length > 256) throw new Error('Password must be 16–256 characters');
     const salt = secret();
-    this.db.prepare('UPDATE accounts SET salt=?,password_hash=? WHERE id=1').run(salt, passwordHash(password, salt));
-    this.db.prepare('UPDATE grants SET revoked=1,revoked_at=?').run(this.now());
-    this.db.exec('DELETE FROM sessions;');
+    const hash = passwordHash(password, salt);
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const account = this.db.prepare('UPDATE accounts SET salt=?,password_hash=? WHERE id=1').run(salt, hash);
+      if (Number(account.changes) !== 1) throw new Error('Founder account does not exist');
+      this.db.prepare('UPDATE grants SET revoked=1,revoked_at=?').run(this.now());
+      this.db.exec('DELETE FROM sessions; COMMIT');
+    } catch (error) {
+      if (this.db.isTransaction) this.db.exec('ROLLBACK');
+      throw error;
+    }
   }
   close(): void { this.db.close(); }
 }

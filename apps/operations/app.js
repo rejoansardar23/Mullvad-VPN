@@ -2,6 +2,12 @@ const byId = (id) => document.getElementById(id);
 let token = null;
 let expiryTimer = null;
 let busy = false;
+const grantLabels = new Map([
+  ['active', 'Authorized'],
+  ['exhausted', 'Exhausted'],
+  ['expired', 'Expired'],
+  ['revoked', 'Revoked'],
+]);
 
 function feedback(message, error = false) {
   byId('feedback').textContent = message;
@@ -61,10 +67,14 @@ function renderStatus(status) {
   if (!status || !status.account || !Array.isArray(status.grants) || !Array.isArray(status.gateways)) {
     throw new Error('The service returned an invalid overview.');
   }
+  const grants = status.grants.map(grant => ({
+    grant,
+    state: grant.active === (grant.state === 'active') ? grant.state : undefined,
+  }));
   byId('account-name').textContent = `Signed in as ${status.account.username}`;
   byId('usage').textContent = bytes(status.account.usedBytes);
   byId('quota').textContent = `Account quota: ${bytes(status.account.quotaBytes)}`;
-  byId('active-grants').textContent = String(status.grants.filter((grant) => !grant.revoked && timestamp(grant.expiresAt) > Date.now()).length);
+  byId('active-grants').textContent = String(grants.filter(({ state }) => state === 'active').length);
   byId('environment').textContent = status.mode === 'local' ? 'Local development' : 'Configured';
   const gateways = byId('gateways');
   gateways.replaceChildren();
@@ -89,17 +99,16 @@ function renderStatus(status) {
     gateways.append(item);
   }
   byId('grants').replaceChildren();
-  byId('no-grants').hidden = status.grants.length !== 0;
-  for (const grant of status.grants) {
+  byId('no-grants').hidden = grants.length !== 0;
+  for (const { grant, state } of grants) {
     const row = document.createElement('tr');
     const expires = timestamp(grant.expiresAt);
-    const active = !grant.revoked && expires > Date.now();
     cell(row, grant.id);
     cell(row, Number.isFinite(expires) ? new Date(expires).toLocaleString() : 'Unavailable');
     cell(row, bytes(grant.usedBytes));
-    cell(row, grant.revoked ? 'Revoked' : active ? 'Authorized' : 'Expired');
+    cell(row, grantLabels.get(state) ?? 'Unavailable');
     const action = cell(row, '');
-    if (active) {
+    if (state === 'active') {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'secondary';

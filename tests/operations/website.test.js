@@ -37,7 +37,14 @@ test('operations UI signs in, renders untrusted text safely, revokes and signs o
     if (!loggedIn || req.headers.authorization !== `Bearer ${session}`) return json(401, { error: 'unauthorized' });
     if (req.url === '/v1/status' && req.method === 'GET') return json(200, {
       account: { username: accountName, quotaBytes: 1048576, usedBytes: 4096 },
-      grants: [{ id: 'fixture/grant', expiresAt, usedBytes: 4096, revoked }],
+      grants: [
+        { id: 'fixture/grant', expiresAt, usedBytes: 4096, revoked, state: revoked ? 'revoked' : 'active', active: !revoked },
+        { id: 'fixture-exhausted', expiresAt, usedBytes: 2048, revoked: false, state: 'exhausted', active: false },
+        { id: 'fixture-expired', expiresAt: expiresAt - 120000, usedBytes: 0, revoked: false, state: 'expired', active: false },
+        { id: 'fixture-revoked', expiresAt, usedBytes: 0, revoked: true, state: 'revoked', active: false },
+        { id: 'fixture-unknown', expiresAt, usedBytes: 0, revoked: false, state: 'unknown', active: true },
+        { id: 'fixture-inconsistent', expiresAt, usedBytes: 0, revoked: false, state: 'active', active: false },
+      ],
       gateways: [{ id: 'fixture', name: '<script>window.injected=true</script>', scheme: 'https', host: 'localhost', port: 8443, live: false }],
       mode: 'local', releaseBlocked: true,
     });
@@ -76,6 +83,14 @@ test('operations UI signs in, renders untrusted text safely, revokes and signs o
   assert.equal(await page.locator('#account-name').textContent(), `Signed in as ${accountName}`);
   assert.equal(await page.locator('#usage').textContent(), '4.0 KiB');
   assert.equal(await page.locator('#active-grants').textContent(), '1');
+  const grantRow = id => page.getByRole('row').filter({ has: page.getByRole('cell', { name: id, exact: true }) });
+  for (const [id, label] of [
+    ['fixture/grant', 'Authorized'], ['fixture-exhausted', 'Exhausted'], ['fixture-expired', 'Expired'],
+    ['fixture-revoked', 'Revoked'], ['fixture-unknown', 'Unavailable'], ['fixture-inconsistent', 'Unavailable'],
+  ]) {
+    assert.equal(await grantRow(id).getByRole('cell', { name: label, exact: true }).count(), 1);
+    assert.equal(await grantRow(id).getByRole('button', { name: /Revoke/ }).count(), Number(id === 'fixture/grant'));
+  }
   assert.equal(await page.locator('#environment').textContent(), 'Local development');
   assert.match(await page.locator('#gateways').textContent(), /Development fixture · no live US exit verified/);
   assert.equal(await page.locator('#gateways strong').textContent(), '<script>window.injected=true</script>');
@@ -87,7 +102,7 @@ test('operations UI signs in, renders untrusted text safely, revokes and signs o
   await page.getByRole('status').filter({ hasText: 'Grant revoked.' }).waitFor();
   assert.equal(revoked, true);
   assert.equal(await page.locator('#active-grants').textContent(), '0');
-  assert.match(await page.locator('#grants').textContent(), /Revoked/);
+  assert.equal(await grantRow('fixture/grant').getByRole('cell', { name: 'Revoked', exact: true }).count(), 1);
   await page.getByRole('button', { name: 'Refresh' }).click();
   await page.getByRole('status').filter({ hasText: 'Overview updated.' }).waitFor();
   await page.getByRole('button', { name: 'Sign out' }).click();

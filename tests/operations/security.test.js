@@ -5,7 +5,7 @@ import { Store } from '../../services/control-api/store.ts';
 import { createControlApi } from '../../services/control-api/server.ts';
 import { createTlsFixture } from '../helpers/tls.js';
 
-test('founder operations session revokes an extension grant across sessions, while invalid bearers cannot', async () => {
+test('founder operations revokes extension grants, denies invalid bearers and reports exhausted quota', async () => {
   const tls = await createTlsFixture();
   const store = new Store(':memory:');
   const password = 'independent-security-fixture-password';
@@ -41,6 +41,16 @@ test('founder operations session revokes an extension grant across sessions, whi
     assert.equal(result.data.revoked, true);
     assert.equal(store.authorize(grant.data.username, grant.data.password), null);
     assert.deepEqual(revoked, [grant.data.id]);
+
+    const quotaGrant = await request('/v1/grants', { method: 'POST', token: extension.data.token, body: { gatewayId: 'fixture' } });
+    assert.equal(quotaGrant.status, 201);
+    store.addUsage(quotaGrant.data.id, store.status().account.quotaBytes);
+    const status = await request('/v1/status', { token: operations.data.token });
+    assert.equal(status.status, 200);
+    const exhaustedGrant = status.data.grants.find(({ id }) => id === quotaGrant.data.id);
+    assert.equal(exhaustedGrant.state, 'exhausted');
+    assert.equal(exhaustedGrant.active, false);
+    assert.equal(store.authorize(quotaGrant.data.username, quotaGrant.data.password), null);
   } finally {
     await api.close();
     store.close();

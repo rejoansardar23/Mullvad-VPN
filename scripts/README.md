@@ -18,7 +18,9 @@ Backups use AES-256-GCM through Node/OpenSSL, a random 32-byte salt, random 12-b
 
 New output files are mode `0600`; newly created directories and temporary snapshot directories are mode `0700`. An online snapshot and decrypted restore are temporarily present on disk inside those private directories and are removed after success or failure. This is filesystem cleanup, not a claim of forensic secure erasure. Prefer an encrypted host volume when available. No backup passphrase or database records are printed.
 
-Local backups remain in the same failure domain unless the owner moves a tested encrypted copy to existing authorized storage outside this machine. No remote storage has been configured or verified. The local automated drill restores the real control database, performs account recovery, starts the API, verifies the new founder login and rejects old sessions. Deployment rollback, off-host recovery and production service recovery remain separate acceptance checks.
+Run the local handoff drill with `node --test tests/runtime/dev.test.js`. It uses the backup, restore and account CLIs with disposable credentials and two isolated directories on one machine. It copies the encrypted archive, restores and rotates access with services stopped, preserves accounted usage, rejects the old password, bearer and proxy grant, and accepts fresh credentials. The source database stays byte-identical.
+
+For the off-host drill, copy the encrypted archive to existing authorized storage in a separate failure domain. Retrieve it to a private destination on the recovery host and run the restore and account recovery commands there. Keep the prior service configuration and database available until the recovered service passes trusted TLS, fresh credential, stale credential and usage checks. Record transfer and recovery times, then verify rollback on the authorized deployment. Keep the passphrase and any private records separate from the copied archive.
 
 # Local development services
 

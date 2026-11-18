@@ -3,11 +3,13 @@
 
 Run from any directory with Python 3.12+. Writes only generated catalogs under
 docs/repository/. Never executes imports, application commands, builds or tests.
-Private runtime contents and Git internals are not read. Symlinks are not followed.
+Ignored workspace entries are counted without publishing their local identities.
+Git internals and ignored file contents are not read.
 """
 
 from __future__ import annotations
 
+import argparse
 import collections
 import csv
 import hashlib
@@ -26,6 +28,12 @@ GENERATED = {
     "docs/repository/WORKSPACE_INVENTORY.tsv",
     "docs/repository/WORKSPACE_SUMMARY.txt",
 }
+IGNORED_GROUPS = {
+    ".local": "private-development-state",
+    "build": "generated-native-sources",
+    "dist": "generated-extension-artifact",
+    "node_modules": "installed-dependency",
+}
 PURPOSES = {
     ".gitleaksignore": "Exact reviewed historical prose finding exclusion; other credential detections remain active",
     ".editorconfig": "Shared source whitespace and editor policy",
@@ -37,10 +45,13 @@ PURPOSES = {
     "tsconfig.json": "Strict compiler policy for extension and control API",
     "README.md": "Current project entry point, boundaries and development commands",
     "AGENTS.md": "Current owner instructions, preservation and delivery requirements",
-    "CONTRIBUTING.md": "Contributor workflow and deferred validation policy",
+    "CONTRIBUTING.md": "Contributor workflow and validation policy",
     "SECURITY.md": "Private reporting and account-recovery responsibilities",
     "PROJECT_IDEA.txt": "Detailed product vision, feasibility, responsibilities and staged roadmap",
     "PROJECT_STRUCTURE.md": "Functional folder organization and dependency map",
+    "PROJECT_HANDOFF.md": "Component and archive inventory, task backlog and review criteria",
+    "docs/FEATURE_MATRIX.md": "Feature implementation, test evidence and native build prerequisites",
+    "docs/NATIVE_LINUX_BUILD.md": "Verified pinned Linux CLI build procedure and artifact identities",
     "apps/extension/core.ts": "Proxy route controller, schema validation, auth scoping and lifecycle state",
     "apps/extension/worker.ts": "MV3 background events, session restoration and proxy-auth challenges",
     "apps/extension/popup.ts": "Popup UI actions and extension session interaction",
@@ -67,10 +78,14 @@ PURPOSES = {
     "infrastructure/firewall.nft.example": "Unapplied host network-policy example",
     "infrastructure/README.md": "Runtime and host deployment prerequisites",
     "tests/helpers/tls.js": "Shared temporary TLS identity fixture for component suites",
+    "tests/helpers/chromium-extension.js": "Managed policy and prerequisite checks for real browser acceptance",
+    "tools/check_native_host.py": "Read-only Linux tunnel test prerequisite checks",
     "tools/extract_upstreams.py": "Offline checksum-pinned native-source recreation and preservation",
     "tools/catalog_repository.py": "Static functional, reference and filesystem catalog generation",
     "tools/.gitignore": "Python bytecode exclusion for repository tooling",
     "tools/tests/test_extract_upstreams.py": "Preserved real-filesystem archive safety regression suite",
+    "tools/tests/test_catalog_repository.py": "Catalog scope and ignored workspace redaction regressions",
+    "tools/tests/test_check_native_host.py": "Linux capability and device-access check regressions",
     ".github/workflows/verify.yml": "Manual security/build/test verification; no automatic run in this task",
     "AnalyseFuture/PRESERVATION_MANIFEST.json": "Every baseline file's exact preserved destination and content identity",
 }
@@ -173,17 +188,20 @@ def references(path: str) -> list[dict[str, str]]:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--project-only", action="store_true", help="refresh FILE_CATALOG.json without a workspace scan")
+    args = parser.parse_args()
     OUTPUT.mkdir(parents=True, exist_ok=True)
     paths = set()
-    for args in (["git", "ls-files", "-z"], ["git", "ls-files", "--others", "--exclude-standard", "-z"]):
-        paths.update(subprocess.check_output(args, cwd=ROOT).decode().split("\0"))
+    for command in (["git", "ls-files", "-z"], ["git", "ls-files", "--others", "--exclude-standard", "-z"]):
+        paths.update(subprocess.check_output(command, cwd=ROOT).decode().split("\0"))
     paths.discard("")
     paths.update(GENERATED)
     files = [{"path": p, "functional_collection": category(p), "purpose": purpose(p),
-              "literal_dependencies": references(p) if (ROOT / p).is_file() else []}
-             for p in sorted(paths) if (ROOT / p).is_file() or p in GENERATED]
+              "literal_dependencies": references(p) if not (ROOT / p).is_symlink() and (ROOT / p).is_file() else []}
+             for p in sorted(paths) if (ROOT / p).is_file() or (ROOT / p).is_symlink() or p in GENERATED]
     (OUTPUT / "FILE_CATALOG.json").write_text(json.dumps({
-        "scope": "All current Git project files, including uncommitted reorganization additions; deleted old paths are represented by preserved destinations.",
+        "scope": "Existing Git-tracked project files, nonignored additions and catalog outputs.",
         "method": "Content/path-aware functional classification and bounded literal import observation; no execution or resolved semantic/security audit.",
         "files": files,
         "node_command_and_dependency_interface": json.loads((ROOT / "package.json").read_text()),
@@ -192,31 +210,45 @@ def main() -> None:
             if key in ("version", "dependencies", "optionalDependencies", "peerDependencies", "dev", "optional", "os", "cpu", "license")
         } for name, entry in json.loads((ROOT / "package-lock.json").read_text())["packages"].items()},
     }, indent=2) + "\n")
-    upstream = {}
-    source_catalog = OUTPUT / "UPSTREAM_CATALOG.jsonl"
-    if source_catalog.exists():
-        for line in source_catalog.read_text().splitlines():
-            entry = json.loads(line)
-            upstream[entry["extracted_equivalent"]] = entry
+    if args.project_only:
+        print(f"Cataloged {len(files)} project files. Workspace inventory was not scanned or changed.")
+        return
+    write_workspace_inventory({item["path"] for item in files})
+
+
+def write_workspace_inventory(project_paths: set[str]) -> None:
+    project_dirs = {parent.as_posix() for path in project_paths for parent in Path(path).parents}
     rows = []
     totals = collections.Counter()
     errors = []
-    private_count = 0
-    for directory, subdirs, names in os.walk(ROOT, followlinks=False, onerror=lambda e: errors.append(str(e))):
+    redacted_count = 0
+    for directory, subdirs, names in os.walk(
+        ROOT, followlinks=False, onerror=lambda error: errors.append(error.strerror or type(error).__name__)
+    ):
         parent = Path(directory)
         if parent == ROOT:
-            subdirs[:] = [d for d in subdirs if d != ".git"]
+            subdirs[:] = [name for name in subdirs if name != ".git"]
+            names = [name for name in names if name != ".git"]
+        subdirs.sort()
         for name in sorted(subdirs + names):
             p = parent / name
             relative = p.relative_to(ROOT).as_posix()
-            info = p.lstat()
-            kind = "symlink" if stat.S_ISLNK(info.st_mode) else "directory" if stat.S_ISDIR(info.st_mode) else "file"
+            try:
+                info = p.lstat()
+            except OSError as error:
+                errors.append(error.strerror or type(error).__name__)
+                continue
+            kind = {
+                stat.S_IFLNK: "symlink", stat.S_IFDIR: "directory", stat.S_IFREG: "file",
+            }.get(stat.S_IFMT(info.st_mode), "special")
+            if relative not in project_paths and (kind != "directory" or relative not in project_dirs):
+                group = IGNORED_GROUPS.get(relative.split("/", 1)[0], "other-non-project-entry")
+                totals[(group, kind)] += 1
+                redacted_count += 1
+                rows.append([f"<redacted-workspace-entry-{redacted_count}>", kind, group, "", "local-content-not-read", ""])
+                continue
             group = category(relative)
             totals[(group, kind)] += 1
-            if relative == ".local" or relative.startswith(".local/"):
-                private_count += 1
-                rows.append([".local/<private-entry-" + str(private_count) + ">", kind, group, "", "private-content-not-read", ""])
-                continue
             digest = ""
             source_identity = ""
             if relative in GENERATED:
@@ -224,12 +256,6 @@ def main() -> None:
             elif kind == "file":
                 with p.open("rb") as stream:
                     digest = hashlib.file_digest(stream, "sha256").hexdigest()
-                if relative.startswith("build/"):
-                    parts = relative.split("/")
-                    if "upstream" in parts:
-                        key = "build/upstream/" + "/".join(parts[parts.index("upstream") + 1:])
-                        expected = upstream.get(key)
-                        source_identity = "matches-preserved-archive" if expected and expected.get("sha256") == digest else "generated-content-without-matching-archive-record"
             elif kind == "symlink":
                 source_identity = "link-text:" + os.readlink(p)
             rows.append([relative, kind, group, str(info.st_size) if kind == "file" else "", source_identity, digest])
@@ -243,13 +269,13 @@ def main() -> None:
         writer.writerow(["path", "kind", "functional_collection", "bytes", "content_relationship", "sha256"])
         writer.writerows([[value if value else "-" for value in row] for row in sorted(rows)])
     lines = [
-        "STATIC WORKSPACE COVERAGE: 17 November 2026",
+        "STATIC WORKSPACE COVERAGE",
         "No application, archived code, tests or builds are executed by this catalog.",
         "All filesystem paths are visited except protected .git internals; symlinks are never followed.",
-        "Private .local entries are counted and redacted; their contents, hashes and values are not read.",
-        "Generated and installed files remain in required layouts; source identity is observed where archive records exist.",
+        "Ignored and other non-project entries are grouped and counted without local paths, sizes, link targets or hashes.",
+        "Use the upstream catalog and extractor verification to establish preserved source identity.",
         "Counts describe this workspace snapshot, not required future generated state or test readiness.",
-        f"Authored/preserved project file records: {len(files)}",
+        f"Authored/preserved project file records: {len(project_paths)}",
         f"Filesystem inventory rows (including dirs and protected Git marker): {len(rows)}",
         f"Traversal errors: {len(errors)}",
         "",
@@ -258,7 +284,7 @@ def main() -> None:
         lines.append(f"{group}: {kind}={count}")
     lines.extend(["", "Traversal errors:", *errors] if errors else [])
     (OUTPUT / "WORKSPACE_SUMMARY.txt").write_text("\n".join(lines) + "\n")
-    print(f"Cataloged {len(files)} project files and {len(rows)} workspace entries; traversal errors: {len(errors)}. No tests executed.")
+    print(f"Cataloged {len(project_paths)} project files and {len(rows)} workspace entries; traversal errors: {len(errors)}. No tests executed.")
 
 
 if __name__ == "__main__":

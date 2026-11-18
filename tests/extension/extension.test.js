@@ -214,6 +214,32 @@ test('settings changed while verification is pending prevent a connected claim',
   assert.equal(state.status, 'error'); assert.match(state.message, /control changed during verification/);
 });
 
+test('route verification stops reporting a connection after WebRTC policy changes', async () => {
+  const f = fixture({live: true});
+  await signedIn(f);
+  assert.equal((await f.controller.connect('fixture')).status, 'connected');
+  const original = f.controller.request;
+  f.controller.request = async (url, options) => {
+    const result = await original(url, options);
+    if (url === gateway.verificationUrl) {
+      f.setPrivacy({levelOfControl: 'controlled_by_other_extensions', value: 'default'});
+    }
+    return result;
+  };
+
+  const state = await f.controller.verify();
+  assert.equal(state.status, 'error');
+  assert.match(state.message, /WebRTC privacy setting/);
+  assert.equal(state.routingActive, true);
+  assert.equal(f.calls.filter(c => c[0] === 'clearProxy').length, 0);
+
+  const requests = f.calls.filter(c => c[0] === 'request').length;
+  assert.equal((await f.controller.verify()).status, 'error');
+  assert.equal(f.calls.filter(c => c[0] === 'request').length, requests);
+  await f.controller.disconnect();
+  assert.equal(f.calls.filter(c => c[0] === 'clearPrivacy').length, 0);
+});
+
 test('logout sends a valid JSON POST before clearing the account session', async () => {
   const f = fixture(); await signedIn(f);
   await f.controller.logout();

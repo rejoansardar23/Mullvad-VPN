@@ -7,51 +7,46 @@ import {chromium} from '@playwright/test';
 import {execFileSync} from 'node:child_process';
 import {createServer} from 'node:http';
 import {once} from 'node:events';
+import {canRunRealExtension} from '../helpers/chromium-extension.js';
 
 test('Chromium loads the actual MV3 worker and renders an honest disconnected popup', {timeout: 30000}, async t => {
-  if (!process.env.CHROMIUM_PATH) {
-    const policy = await readFile('/etc/chromium/policies/managed/extensions.json', 'utf8').then(JSON.parse).catch(() => null);
-    if (policy?.ExtensionInstallBlocklist?.includes('*')) {
-      t.skip('Installed Chromium managed policy blocks all unpacked extensions (/etc/chromium/policies/managed/extensions.json). Actual MV3 load/auth remains unverified; policy is preserved.');
-      return;
-    }
-  }
+  if (!await canRunRealExtension(t)) return;
   execFileSync(process.execPath, ['apps/extension/build.js']);
   const extension = path.resolve('dist/extension');
   const profile = await mkdtemp(path.join(tmpdir(), 'private-route-chromium-'));
-  const context = await chromium.launchPersistentContext(profile, {
+  let context;
+  t.after(async () => {
+    try { await context?.close(); }
+    finally { await rm(profile, {recursive: true, force: true}); }
+  });
+  context = await chromium.launchPersistentContext(profile, {
     executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true,
     args: ['--no-sandbox', `--disable-extensions-except=${extension}`, `--load-extension=${extension}`],
   });
-  try {
-    const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker', {timeout: 10000});
-    const extensionId = new URL(worker.url()).host;
-    const page = await context.newPage();
-    const errors = []; page.on('pageerror', error => errors.push(error.message));
-    await page.goto(`chrome-extension://${extensionId}/popup.html`);
-    await page.locator('#message').filter({hasText: 'No browser proxy is active.'}).waitFor();
-    assert.equal(await page.locator('#status').textContent(), 'Disconnected');
-    assert.equal(await page.locator('#login').isVisible(), true);
-    assert.equal(await page.locator('#controls').isVisible(), false);
-    assert.match(await page.locator('aside').textContent(), /Other apps and incognito windows are not protected/);
-    await page.locator('#origin').fill('http://localhost:8080');
-    await page.locator('#username').fill('founder');
-    await page.locator('#password').fill('not-sent-to-network');
-    await page.getByRole('button', {name: 'Sign in securely'}).click();
-    await page.locator('#error').filter({hasText: 'Enter an HTTPS control API origin'}).waitFor();
-    assert.equal(await page.locator('#password').inputValue(), '');
-    assert.deepEqual(errors, []);
-    const state = await worker.evaluate(async () => {
-      const setting = await chrome.proxy.settings.get({incognito: false});
-      const session = await chrome.storage.session.get('session');
-      return {level: setting.levelOfControl, auth: session.session.auth};
-    });
-    assert.equal(state.level, 'controllable_by_this_extension');
-    assert.equal(state.auth, null);
-  } finally {
-    await context.close();
-    await rm(profile, {recursive: true, force: true});
-  }
+  const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker', {timeout: 10000});
+  const extensionId = new URL(worker.url()).host;
+  const page = await context.newPage();
+  const errors = []; page.on('pageerror', error => errors.push(error.message));
+  await page.goto(`chrome-extension://${extensionId}/popup.html`);
+  await page.locator('#message').filter({hasText: 'No browser proxy is active.'}).waitFor();
+  assert.equal(await page.locator('#status').textContent(), 'Disconnected');
+  assert.equal(await page.locator('#login').isVisible(), true);
+  assert.equal(await page.locator('#controls').isVisible(), false);
+  assert.match(await page.locator('aside').textContent(), /Other apps and incognito windows are not protected/);
+  await page.locator('#origin').fill('http://localhost:8080');
+  await page.locator('#username').fill('founder');
+  await page.locator('#password').fill('not-sent-to-network');
+  await page.getByRole('button', {name: 'Sign in securely'}).click();
+  await page.locator('#error').filter({hasText: 'Enter an HTTPS control API origin'}).waitFor();
+  assert.equal(await page.locator('#password').inputValue(), '');
+  assert.deepEqual(errors, []);
+  const state = await worker.evaluate(async () => {
+    const setting = await chrome.proxy.settings.get({incognito: false});
+    const session = await chrome.storage.session.get('session');
+    return {level: setting.levelOfControl, auth: session.session.auth};
+  });
+  assert.equal(state.level, 'controllable_by_this_extension');
+  assert.equal(state.auth, null);
 });
 
 test('Chromium renders the popup and handles UI actions with a simulated extension runtime', {timeout: 30000}, async () => {

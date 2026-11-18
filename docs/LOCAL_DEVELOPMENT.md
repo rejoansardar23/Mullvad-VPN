@@ -28,13 +28,13 @@ All listeners bind to loopback. API, proxy and optional verifier ports default t
 4. Use your trusted HTTPS API origin and private founder credentials in the popup. Default development has no gateway. Explicit fixture mode may verify a local route but must remain labelled a fixture.
 5. For a real connection, first complete [DEPLOYMENT.md](DEPLOYMENT.md), including authorized US hosting, trusted TLS and exit verification. Never turn a fixture into a live gateway by merely changing a country label.
 
-The installed cloud Chromium currently has `ExtensionInstallBlocklist: ["*"]`. It cannot validate actual MV3 loading/proxy ownership/auth events here. Popup DOM tests use an explicitly simulated extension runtime, while Node integration tests exercise the actual controller against a real TLS API. Installation and live traffic behavior in the owner's Chrome remain acceptance requirements.
+The installed cloud Chromium has `ExtensionInstallBlocklist: ["*"]`. The ordinary test run skips actual MV3 loading and browser proxy routing here. Use the [strict acceptance command](../apps/extension/README.md) on an authorized unpacked-extension runner. Popup DOM tests use an explicitly simulated extension runtime, while Node integration tests exercise the controller against a real TLS API.
 
 ## Accounts and recovery
 
 For a separate configured deployment, create a founder with `npm run account -- create /absolute/private/control.sqlite founder`, supplying `FOUNDER_PASSWORD` securely in the environment. Passwords must be 16–256 characters. `recover` changes the password and revokes all sessions/grants; stop the services before recovery so existing tunnels are also terminated. There is no public signup or paid email recovery. Session lifetime is one hour and connection grants last up to five minutes. Reconnect issues a fresh grant; only one founder grant remains active. Expired access keeps proxy settings until the user explicitly disconnects.
 
-See [../scripts/README.md](../scripts/README.md) for encrypted backup/restore. The integrated test restores the real control database, logs in with the restored founder account and verifies usage and revocation survive. An external recovery copy and deployed rollback drill remain outstanding.
+The local recovery drill verifies CLI-driven restore, old credential rejection, new proxy authorization and preserved usage after copying an encrypted backup between isolated local directories. Actual off-host retrieval and deployed rollback remain outstanding. [Recovery commands and drill](../scripts/README.md)
 
 ## Traffic and privacy boundary
 

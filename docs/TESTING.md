@@ -17,4 +17,6 @@ python3 tools/extract_upstreams.py --verify-only
 
 Managed Chromium can block real unpacked-extension tests. Report those as skipped. The popup test with an injected extension runtime is simulated at that boundary; it does not establish actual browser proxy behavior. A fixture exit is not a live location or native VPN tunnel.
 
+Use the [strict browser acceptance command](../apps/extension/README.md) on a permitted runner. Run `node --test tests/runtime/dev.test.js` for the local recovery handoff drill. Run `python3 -B tools/check_native_host.py` on an authorized Linux candidate to check the effective process capabilities, TUN access and inspection tools before attempting a real tunnel.
+
 Record the tested code and actual results in [STATUS.md](STATUS.md). A manual workflow is available in `.github/workflows/verify.yml`; local results do not establish that GitHub Actions has run. No release, deployment or security certification follows from a passing suite alone.

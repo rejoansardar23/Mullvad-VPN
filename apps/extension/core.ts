@@ -1,4 +1,5 @@
 const STATES = new Set(['disconnected', 'connecting', 'connected', 'fixture', 'error']);
+const ROUTE_PRIVACY_POLICY = 'disable_non_proxied_udp';
 
 export interface Gateway {
   id: string; name: string; country: string; host: string; port: number; scheme: 'https';
@@ -179,7 +180,7 @@ export class RouteController {
     this.state = {status: 'connecting', message: 'Applying encrypted proxy and checking the route…'};
     await this.save();
     try {
-      await this.browser.privacy.network.webRTCIPHandlingPolicy.set({value: 'disable_non_proxied_udp', scope: 'regular'});
+      await this.browser.privacy.network.webRTCIPHandlingPolicy.set({value: ROUTE_PRIVACY_POLICY, scope: 'regular'});
       await this.browser.proxy.settings.set({value: this.metadata.rules, scope: 'regular'});
       await this.browser.alarms.create('grant-expiry', {when: grant.expiresAt});
       await this.browser.alarms.create('route-check', {periodInMinutes: 1});
@@ -188,6 +189,13 @@ export class RouteController {
       this.state = {status: 'error', message: `${error instanceof Error ? error.message : 'Proxy setup failed.'} Disconnect explicitly to restore browsing.`};
       await this.save();
       throw error;
+    }
+  }
+
+  private async requireRoutePrivacy() {
+    const policy = await this.browser.privacy.network.webRTCIPHandlingPolicy.get({});
+    if (policy.levelOfControl !== 'controlled_by_this_extension' || policy.value !== ROUTE_PRIVACY_POLICY) {
+      throw new Error('The extension no longer controls the required WebRTC privacy setting.');
     }
   }
 
@@ -200,6 +208,7 @@ export class RouteController {
       if (setting.levelOfControl !== 'controlled_by_this_extension' || !sameRules(setting.value, this.metadata?.rules)) {
         throw new Error('Browser proxy control changed. This route is not protected.');
       }
+      await this.requireRoutePrivacy();
       const response = await this.request(this.active.gateway.verificationUrl, {
         cache: 'no-store', credentials: 'omit', redirect: 'error', signal: AbortSignal.timeout(10000),
       });
@@ -210,6 +219,8 @@ export class RouteController {
       if (current.levelOfControl !== 'controlled_by_this_extension' || !sameRules(current.value, this.metadata?.rules)) {
         throw new Error('Browser proxy control changed during verification. This route is not protected.');
       }
+      await this.requireRoutePrivacy();
+      if (this.active.expiresAt <= this.now()) return this.expire();
       if (data.ip !== this.active.gateway.expectedIp) throw new Error('Exit IP differs from the configured gateway.');
       this.state = this.active.gateway.live
         ? {status: 'connected', message: `Verified browser route · ${data.ip}`}
@@ -238,7 +249,7 @@ export class RouteController {
         throw new Error('Proxy settings changed unexpectedly. Inspect Chrome proxy settings before clearing them.');
       }
       const privacy = await this.browser.privacy.network.webRTCIPHandlingPolicy.get({});
-      if (privacy.levelOfControl === 'controlled_by_this_extension' && privacy.value === 'disable_non_proxied_udp') {
+      if (privacy.levelOfControl === 'controlled_by_this_extension' && privacy.value === ROUTE_PRIVACY_POLICY) {
         if (this.metadata.privacyOwnedBefore) await this.browser.privacy.network.webRTCIPHandlingPolicy.set({value: this.metadata.previousPrivacy, scope: 'regular'});
         else await this.browser.privacy.network.webRTCIPHandlingPolicy.clear({scope: 'regular'});
       }

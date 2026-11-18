@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import https from 'node:https';
-import {execFileSync, spawnSync} from 'node:child_process';
+import {execFileSync} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
 import {once} from 'node:events';
-import {mkdtemp, mkdir, readFile, rm, writeFile} from 'node:fs/promises';
+import {mkdtemp, mkdir, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {chromium} from '@playwright/test';
@@ -13,21 +13,10 @@ import {Store} from '../../services/control-api/store.ts';
 import {createControlApi} from '../../services/control-api/server.ts';
 import {createGateway} from '../../services/gateway/index.js';
 import {createTlsFixture} from '../helpers/tls.js';
+import {canRunRealExtension} from '../helpers/chromium-extension.js';
 
 test('real Chromium connects via authenticated TLS proxy, forwards HTTP and HTTPS, and disconnects', {timeout: 90000}, async t => {
-  // The existing managed-environment guard is intentionally retained. Never
-  // remove enterprise policy or disable certificate verification for this test.
-  if (!process.env.CHROMIUM_PATH) {
-    const policy = await readFile('/etc/chromium/policies/managed/extensions.json', 'utf8').then(JSON.parse).catch(() => null);
-    if (policy?.ExtensionInstallBlocklist?.includes('*')) {
-      t.skip('Managed Chromium forbids unpacked extensions; test on an authorized browser runner.');
-      return;
-    }
-  }
-  if (spawnSync('certutil', ['-H'], {stdio: 'ignore'}).error?.code === 'ENOENT') {
-    t.skip('NSS certutil is required to trust the isolated local TLS fixture (install libnss3-tools).');
-    return;
-  }
+  if (!await canRunRealExtension(t, {needsNss: true})) return;
 
   execFileSync(process.execPath, ['apps/extension/build.js', 'chromium-route']);
   const extension = path.resolve('dist/extension-chromium-route');

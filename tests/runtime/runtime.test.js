@@ -1,15 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, rm, symlink } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { mkdtemp, writeFile, rm, stat, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import https from 'node:https';
 import net from 'node:net';
 import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import { validateConfig, start } from '../../infrastructure/serve.mjs';
 import { Store } from '../../services/control-api/store.ts';
 import { createTlsFixture } from '../helpers/tls.js';
+
+const run = promisify(execFile);
 
 async function freePort() {
   const socket = net.createServer(); socket.listen(0, '127.0.0.1'); await once(socket, 'listening');
@@ -47,8 +51,31 @@ test('runtime validation requires private management, external files, honest liv
   assert.throws(() => validateConfig({ ...input, database: fileURLToPath(new URL('../../runtime.sqlite', import.meta.url)) }), /outside checkout/);
   assert.throws(() => validateConfig({ ...input, database: fileURLToPath(new URL('../../..secret.sqlite', import.meta.url)) }), /outside checkout/);
   assert.throws(() => validateConfig({ ...input, gateway: { ...input.gateway, live: true } }), /preflight/);
+  const preflight = { authorized: true, zeroAdditionalCostVerified: true, providerPermitsProxy: true, usRegionVerified: true };
+  assert.throws(() => validateConfig({ ...input, preflight, gateway: { ...input.gateway, live: true } }), /public expected exit IP/);
   await symlink(input.tls.key, join(dir, 'linked.key'));
   assert.throws(() => validateConfig({ ...input, tls: { ...input.tls, key: join(dir, 'linked.key') } }), /symlinks/);
+});
+
+test('runtime config check verifies both TLS names and the key pair without opening SQLite', async t => {
+  const { input, dir } = await config(t);
+  const configPath = join(dir, 'config.json');
+  const runtime = fileURLToPath(new URL('../../infrastructure/serve.mjs', import.meta.url));
+  const check = async configuration => {
+    await writeFile(configPath, JSON.stringify(configuration), { mode: 0o600 });
+    return run(process.execPath, [runtime, '--check-config'], { env: { ...process.env, PROXY_CONFIG: configPath } });
+  };
+  const matched = { ...input, apiOrigin: 'https://127.0.0.1' };
+  assert.match((await check(matched)).stdout, /Configuration and TLS identity checks passed/);
+  await assert.rejects(check(input), { stderr: /control API hostname/ });
+  await assert.rejects(check({ ...matched, gateway: { ...matched.gateway, host: 'other.example.invalid' } }),
+    { stderr: /gateway hostname/ });
+  const otherTls = await createTlsFixture();
+  t.after(otherTls.cleanup);
+  const otherKey = join(dir, 'other.key');
+  await writeFile(otherKey, otherTls.key, { mode: 0o600 });
+  await assert.rejects(check({ ...matched, tls: { ...matched.tls, key: otherKey } }), { stderr: /key values mismatch/i });
+  await assert.rejects(stat(input.database), { code: 'ENOENT' });
 });
 
 test('configured runtime starts real TLS API, rejects unauthenticated admin, stops and restarts', async t => {
@@ -64,4 +91,14 @@ test('configured runtime starts real TLS API, rejects unauthenticated admin, sto
     running = await start(validated);
     assert.equal((await request(input.management.port, tls.ca, '/healthz')).status, 200);
   } finally { await running.close(); }
+});
+
+test('runtime and storage reject a dangling database symlink without creating its target', async t => {
+  const { input, dir } = await config(t);
+  const target = join(dir, 'missing.sqlite');
+  await symlink(target, input.database);
+
+  assert.throws(() => validateConfig(input), /Runtime file symlinks are forbidden/);
+  assert.throws(() => new Store(input.database), /Database symlinks are forbidden/);
+  await assert.rejects(stat(target), { code: 'ENOENT' });
 });
